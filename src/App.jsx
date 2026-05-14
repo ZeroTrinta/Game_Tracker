@@ -43,6 +43,20 @@ const sb = (() => {
       const ct = r.headers.get("Content-Range") || "0/0";
       return parseInt(ct.split("/")[1] || "0");
     },
+    // Busca TODOS os registros sem limite (paginação automática de 1000 em 1000)
+    async selectAll(table, params = "") {
+      const PAGE = 1000;
+      let all = [], offset = 0, done = false;
+      while (!done) {
+        const r = await fetch(`${base}/${table}?${params}&limit=${PAGE}&offset=${offset}`, { headers: { ...h, Prefer: "return=representation" } });
+        if (!r.ok) throw new Error(await r.text());
+        const chunk = await r.json();
+        all = all.concat(chunk);
+        if (chunk.length < PAGE) done = true;
+        else offset += PAGE;
+      }
+      return all;
+    },
   };
 })();
 
@@ -100,18 +114,18 @@ function limparEExtrairConsole(produto) {
 }
 
 // ─── STATUS ──────────────────────────────────────────────────────────────────
+// Fluxo: Pendente → Em Edição → Aguardando Aprovação → Aprovado | Negado | Pausado
 const STATUS = {
-  pendente:             { label: "Pendente",          color: "#6b7280", bg: "#1f2937", icon: Clock        },
-  em_edicao:            { label: "Em Edição",         color: "#3b82f6", bg: "#1e3a5f", icon: Edit3        },
-  aguardando_aprovacao: { label: "Aguard. Aprovação", color: "#f59e0b", bg: "#422006", icon: Eye          },
-  aprovado:             { label: "Aprovado",          color: "#22c55e", bg: "#14532d", icon: Check        },
-  negado:               { label: "Negado",            color: "#ef4444", bg: "#450a0a", icon: XCircle      },
-  pausado:              { label: "Pausado",           color: "#f97316", bg: "#431407", icon: Pause        },
-  publicado:            { label: "Publicado",         color: "#10b981", bg: "#064e3b", icon: CheckCircle2 },
+  pendente:             { label: "Pendente",          color: "#6b7280", bg: "#1f2937", icon: Clock   },
+  em_edicao:            { label: "Em Edição",         color: "#3b82f6", bg: "#1e3a5f", icon: Edit3   },
+  aguardando_aprovacao: { label: "Aguard. Aprovação", color: "#f59e0b", bg: "#422006", icon: Eye     },
+  aprovado:             { label: "Aprovado",          color: "#22c55e", bg: "#14532d", icon: Check   },
+  negado:               { label: "Negado",            color: "#ef4444", bg: "#450a0a", icon: XCircle },
+  pausado:              { label: "Pausado",           color: "#f97316", bg: "#431407", icon: Pause   },
 };
 
 const ML_STATUS_MAP = {
-  active: "publicado", paused: "pausado",
+  active: "aprovado", paused: "pausado",
   closed: "negado", under_review: "aguardando_aprovacao", inactive: "pausado",
 };
 
@@ -319,7 +333,7 @@ export default function App() {
 
       const [data, allJogos] = await Promise.all([
         sb.select("jogos", params),
-        sb.select("jogos", "select=status,console"),
+        sb.selectAll("jogos", "select=status,console"),
       ]);
       setJogos(data);
 
@@ -391,7 +405,7 @@ export default function App() {
 
         // Busca títulos já no banco para deduplicar
         toast("Verificando duplicatas no banco...", "warning");
-        const existentes = await sb.select("jogos", "select=titulo");
+        const existentes = await sb.selectAll("jogos", "select=titulo");
         const existSet   = new Set(existentes.map(j => j.titulo.toLowerCase().trim()));
 
         const novos      = processados.filter(j => !existSet.has(j.titulo.toLowerCase().trim()));
@@ -429,7 +443,7 @@ export default function App() {
   // Sync ML
   async function syncML(jogo) {
     if (!mlToken) { toast("Conecte o ML primeiro", "warning"); return; }
-    if (!jogo.ml_id) { toast("Preencha o ML ID", "warning"); return; }
+    if (!jogo.ml_id) { toast("Cole a URL do anúncio ML primeiro", "warning"); return; }
     setSyncing(true);
     try {
       const r    = await fetch(`https://api.mercadolibre.com/items/${jogo.ml_id}`, { headers: { Authorization: `Bearer ${mlToken}` } });
@@ -647,16 +661,33 @@ export default function App() {
                 </div>
               )}
 
-              {[
-                { label: "🎬 URL do Vídeo",      key: "url_video"      },
-                { label: "🔗 URL do Anúncio ML", key: "url_anuncio_ml" },
-                { label: "🆔 ML ID",             key: "ml_id"          },
-              ].map(f => (
-                <div key={f.key}>
-                  <label style={{ fontSize: 10, color: "#555", fontWeight: 700, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".08em" }}>{f.label}</label>
-                  <input value={selected[f.key] || ""} onChange={e => setSelected(v => ({ ...v, [f.key]: e.target.value }))} style={{ width: "100%", background: "#111", border: "1px solid #222", borderRadius: 8, color: "#ddd", padding: "7px 11px", fontSize: 12, outline: "none" }} />
-                </div>
-              ))}
+              {/* URL do Vídeo */}
+              <div>
+                <label style={{ fontSize: 10, color: "#555", fontWeight: 700, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".08em" }}>🎬 URL do Vídeo</label>
+                <input value={selected.url_video || ""} onChange={e => setSelected(v => ({ ...v, url_video: e.target.value }))} placeholder="https://..." style={{ width: "100%", background: "#111", border: "1px solid #222", borderRadius: 8, color: "#ddd", padding: "7px 11px", fontSize: 12, outline: "none" }} />
+              </div>
+
+              {/* URL Anúncio ML — extrai ML ID automaticamente */}
+              <div>
+                <label style={{ fontSize: 10, color: "#555", fontWeight: 700, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".08em" }}>🔗 URL do Anúncio ML</label>
+                <input
+                  value={selected.url_anuncio_ml || ""}
+                  onChange={e => {
+                    const url = e.target.value;
+                    const match = url.match(/MLB\d+/i);
+                    const mlId = match ? match[0].toUpperCase() : (selected.ml_id || "");
+                    setSelected(v => ({ ...v, url_anuncio_ml: url, ml_id: mlId }));
+                  }}
+                  placeholder="https://www.mercadolivre.com.br/p/MLB..."
+                  style={{ width: "100%", background: "#111", border: "1px solid #222", borderRadius: 8, color: "#ddd", padding: "7px 11px", fontSize: 12, outline: "none" }}
+                />
+                {selected.ml_id && (
+                  <div style={{ marginTop: 5, fontSize: 11, display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ color: "#444" }}>ID detectado:</span>
+                    <span style={{ color: "#3b82f6", fontWeight: 700 }}>{selected.ml_id}</span>
+                  </div>
+                )}
+              </div>
 
               <div>
                 <label style={{ fontSize: 10, color: "#555", fontWeight: 700, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".08em" }}>📝 Observações</label>
