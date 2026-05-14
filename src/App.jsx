@@ -113,6 +113,19 @@ function limparEExtrairConsole(produto) {
   return { titulo: t || String(produto).trim(), console: cons };
 }
 
+// ─── NORMALIZAÇÃO PARA COMPARAÇÃO DE DUPLICATAS ─────────────────────────────
+// Remove tudo que a limpeza automática removeria, para comparar corretamente
+const NORMALIZAR_REGEX = /\b(Midia\s*Fisica|M.dia\s*F.sica|M.dia\s*Digital|F.sico|F.sica|EUR|\bBR\b|Day\s+One\s+Edition|Day\s+1\s+Edition|Launch\s+Edition|Special\s+Edition|Deluxe\s+Edition|Complete\s+Edition|Gold\s+Edition|Standard\s+Edition|Elite\s+Edition|Anniversary\s+Edition|Nintendo\s+Switch\s+2|Switch\s+2|Nintendo\s+Switch(?:\s+Lite|\s+OLED)?|Switch(?:\s+Lite|\s+OLED)?|Xbox\s+Series\s+[XS]|Xbox\s+One|Xbox\s+360|\bXbox\b|PS\s*[2345]|PlayStation\s*[2345]|Nintendo\s+DS|\b3DS\b|Wii\s+U|\bWii\b|\bPC\b)\b/gi;
+
+function normalizarTitulo(titulo) {
+  return titulo
+    .replace(NORMALIZAR_REGEX, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[\s\-–—:,()]+$/, "")
+    .trim()
+    .toLowerCase();
+}
+
 // ─── STATUS ──────────────────────────────────────────────────────────────────
 // Fluxo: Pendente → Em Edição → Aguardando Aprovação → Aprovado | Negado | Pausado
 const STATUS = {
@@ -406,9 +419,10 @@ export default function App() {
         // Busca títulos já no banco para deduplicar
         toast("Verificando duplicatas no banco...", "warning");
         const existentes = await sb.selectAll("jogos", "select=titulo");
-        const existSet   = new Set(existentes.map(j => j.titulo.toLowerCase().trim()));
+        // Normaliza os títulos do banco para comparar sem sufixos (Edition, Mídia Física, etc.)
+        const existSet   = new Set(existentes.map(j => normalizarTitulo(j.titulo)));
 
-        const novos      = processados.filter(j => !existSet.has(j.titulo.toLowerCase().trim()));
+        const novos      = processados.filter(j => !existSet.has(normalizarTitulo(j.titulo)));
         const duplicatas = processados.length - novos.length;
 
         setImportData(novos);
