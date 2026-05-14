@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 // ─── CONFIG — troque pela sua URL do Apps Script ────────────────────────────
-const APPS_SCRIPT_URL = "COLE_SUA_URL_AQUI";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyuzuOoxQfeKBP8bKWtpnsnGnQyHjfkLSdl3G_o6Vrk-cYKX4GAEyJV-BMm3fUmPWO_/exec";
 const ML_APP_ID       = "000000"; // preencha quando tiver o ML App ID
 const ML_REDIRECT_URI = window.location.origin + window.location.pathname;
 
