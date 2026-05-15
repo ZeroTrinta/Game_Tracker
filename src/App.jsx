@@ -18,22 +18,17 @@ const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 // ─── PROXY ML (Supabase Edge Function — resolve CORS) ────────────────────────
 const ML_PROXY = "https://game-tracker-lemon.vercel.app/api/ml-proxy";
 
-async function mlFetch(path, token, options = {}) {
-  const url = `${ML_PROXY}?path=${encodeURIComponent(path)}`;
+async function mlFetch(mlbid, token, endpoint = "") {
+  const url = `${ML_PROXY}?mlbid=${mlbid}${endpoint ? "&endpoint=" + endpoint : ""}`;
   const res  = await fetch(url, {
-    method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
-    body: options.body,
+    method: "GET",
+    headers: { "Authorization": `Bearer ${token}` },
   });
   return res.json();
 }
 
 async function mlFetchOAuth(body) {
-  const url = `${ML_PROXY}?path=${encodeURIComponent("/oauth/token")}`;
-  const res  = await fetch(url, {
+  const res = await fetch(ML_PROXY, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(body).toString(),
@@ -557,7 +552,7 @@ export default function App() {
   async function buscarMotivoNegacao(mlId) {
     try {
       // Endpoint de clips do item
-      const data = await mlFetch(`/items/${mlId}/clips`, mlToken);
+      const data = await mlFetch(mlId, mlToken, "clips");
       if (data && data.results && data.results.length > 0) {
         const clip = data.results[0];
         // Status do clip: approved, rejected, under_review, paused
@@ -577,7 +572,7 @@ export default function App() {
     if (!jogo.ml_id) { toast("Cole a URL do anúncio ML primeiro", "warning"); return; }
     setSyncing(true);
     try {
-      const data = await mlFetch(`/items/${jogo.ml_id}`, mlToken);
+      const data = await mlFetch(jogo.ml_id, mlToken);
       if (data.error) throw new Error(data.message);
       const ns = ML_STATUS_MAP[data.status] || "pendente";
 
@@ -617,7 +612,7 @@ export default function App() {
         const lote = todos.slice(i, i + LOTE);
         await Promise.all(lote.map(async jogo => {
           try {
-            const data = await mlFetch(`/items/${jogo.ml_id}`, mlToken);
+            const data = await mlFetch(jogo.ml_id, mlToken);
             if (data.error) { erros++; return; }
             const ns = ML_STATUS_MAP[data.status] || "pendente";
             const mudou = ns !== jogo.status;
@@ -626,7 +621,7 @@ export default function App() {
             let motivo = jogo.motivo_negacao || "";
             if (ns === "negado") {
               try {
-                const dc = await mlFetch(`/items/${jogo.ml_id}/clips`, mlToken);
+                const dc = await mlFetch(jogo.ml_id, mlToken, "clips");
                 if (dc?.results?.[0]?.rejection_reasons?.length) {
                   motivo = dc.results[0].rejection_reasons.map(r => r.message || r.reason || "").join("; ");
                 }
