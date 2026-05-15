@@ -5,16 +5,26 @@ export default async function handler(req, res) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  let { path } = req.query;
-  if (!path) return res.status(400).json({ error: "path obrigatório" });
+  // Extrai o path diretamente da URL raw para evitar problemas de double-encoding
+  const rawUrl = req.url || "";
+  const pathParam = rawUrl.split("path=")[1];
+  if (!pathParam) return res.status(400).json({ error: "path obrigatório" });
 
-  // Decodifica caso venha encoded
-  try { path = decodeURIComponent(path); } catch(e) {}
+  // Decodifica o path (pode estar encoded uma ou duas vezes)
+  let mlPath;
+  try { mlPath = decodeURIComponent(pathParam); } catch { mlPath = pathParam; }
+  // Segunda decodificação se ainda tiver %
+  if (mlPath.includes("%")) {
+    try { mlPath = decodeURIComponent(mlPath); } catch {}
+  }
 
+  // Segurança: só permite paths do ML
   const allowed = ["/items/", "/clips", "/oauth/token"];
-  if (!allowed.some(p => path.includes(p))) return res.status(403).json({ error: "Path não permitido: " + path });
+  if (!allowed.some(p => mlPath.includes(p))) {
+    return res.status(403).json({ error: "Path não permitido: " + mlPath });
+  }
 
-  const mlUrl  = `https://api.mercadolibre.com${path}`;
+  const mlUrl  = `https://api.mercadolibre.com${mlPath}`;
   const token  = req.headers["authorization"] || "";
   const method = req.method;
   const headers = {};
