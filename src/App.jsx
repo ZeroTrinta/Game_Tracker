@@ -22,13 +22,17 @@ async function mlFetch(mlbid, token, endpoint = "") {
   const url = endpoint
     ? `${ML_PROXY}?mlbid=${mlbid}&endpoint=${endpoint}`
     : `${ML_PROXY}?mlbid=${mlbid}`;
+  console.log("[DEBUG] mlFetch token:", token ? token.substring(0,20)+"..." : "VAZIO");
+  console.log("[DEBUG] mlFetch url:", url);
   const res  = await fetch(url, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
     },
   });
-  return res.json();
+  const data = await res.json();
+  console.log("[DEBUG] mlFetch response:", JSON.stringify(data).substring(0,100));
+  return data;
 }
 
 async function mlFetchOAuth(body) {
