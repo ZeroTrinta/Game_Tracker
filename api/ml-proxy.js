@@ -5,11 +5,14 @@ export default async function handler(req, res) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const { path } = req.query;
+  let { path } = req.query;
   if (!path) return res.status(400).json({ error: "path obrigatório" });
 
+  // Decodifica caso venha encoded
+  try { path = decodeURIComponent(path); } catch(e) {}
+
   const allowed = ["/items/", "/clips", "/oauth/token"];
-  if (!allowed.some(p => path.includes(p))) return res.status(403).json({ error: "Path não permitido" });
+  if (!allowed.some(p => path.includes(p))) return res.status(403).json({ error: "Path não permitido: " + path });
 
   const mlUrl  = `https://api.mercadolibre.com${path}`;
   const token  = req.headers["authorization"] || "";
