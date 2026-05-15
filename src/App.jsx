@@ -5,13 +5,13 @@ import {
   X, Check, Clock, Pause, Eye, Edit3,
   BarChart2, LogIn, Gamepad2, Save,
   AlertTriangle, CheckCircle2, XCircle,
-  Loader2, Menu, ShoppingBag, History
+  Loader2, Menu, ShoppingBag, History, Zap
 } from "lucide-react";
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL      = "https://baftwizxkazuwdczqhpm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZnR3aXp4a2F6dXdkY3pxaHBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjU1ODYsImV4cCI6MjA5NDM0MTU4Nn0.bSVcyhVh_0es0TENfkZJHuR-1KufbijmN8iif39On04";
-const ML_APP_ID         = "000000";
+const ML_APP_ID         = "5901424971936114";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
 // ─── SUPABASE CLIENT ─────────────────────────────────────────────────────────
@@ -310,6 +310,9 @@ export default function App() {
   const [importResult, setImportResult]   = useState(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [syncProgress, setSyncProgress] = useState(null); // { atual, total }
+  const [autoSync, setAutoSync]         = useState(false);
+  const autoSyncRef = useRef(null);
   const fileRef = useRef();
 
   // OAuth ML
@@ -472,6 +475,64 @@ export default function App() {
     setSyncing(false);
   }
 
+  // ── Sincronizar TODOS os jogos com ML ──────────────────────────────────────
+  async function syncTodos() {
+    if (!mlToken) { toast("Conecte o ML primeiro", "warning"); return; }
+    setSyncing(true);
+    setSyncProgress(null);
+
+    try {
+      // Busca todos os jogos que têm ml_id
+      const todos = await sb.selectAll("jogos", "select=id,titulo,ml_id,status&ml_id=not.is.null&ml_id=neq.");
+      if (!todos.length) { toast("Nenhum jogo com ML ID encontrado", "warning"); setSyncing(false); return; }
+
+      let ok = 0, erros = 0, sem_mudanca = 0;
+      setSyncProgress({ atual: 0, total: todos.length });
+
+      // Processar em lotes de 10 com delay para não estourar rate limit da API
+      const LOTE = 10;
+      for (let i = 0; i < todos.length; i += LOTE) {
+        const lote = todos.slice(i, i + LOTE);
+        await Promise.all(lote.map(async jogo => {
+          try {
+            const r = await fetch(`https://api.mercadolibre.com/items/${jogo.ml_id}`, {
+              headers: { Authorization: `Bearer ${mlToken}` }
+            });
+            const data = await r.json();
+            if (data.error) { erros++; return; }
+            const ns = ML_STATUS_MAP[data.status] || "pendente";
+            if (ns !== jogo.status) {
+              await sb.update("jogos", jogo.id, { status: ns, atualizado_em: new Date().toISOString() });
+              ok++;
+            } else sem_mudanca++;
+          } catch { erros++; }
+        }));
+        setSyncProgress({ atual: Math.min(i + LOTE, todos.length), total: todos.length });
+        if (i + LOTE < todos.length) await new Promise(r => setTimeout(r, 500));
+      }
+
+      const agora = new Date().toLocaleString("pt-BR");
+      localStorage.setItem("ml_last_sync", agora);
+      setLastSync(agora);
+      setSyncProgress(null);
+      toast(`Sync concluído: ${ok} atualizados, ${sem_mudanca} sem mudança${erros ? `, ${erros} erros` : ""}`, ok > 0 ? "success" : "warning");
+      loadJogos();
+    } catch(e) { toast("Erro sync: " + e.message, "error"); }
+    setSyncing(false);
+  }
+
+  // ── Auto-sync a cada 30 minutos ─────────────────────────────────────────────
+  useEffect(() => {
+    if (autoSync && mlToken) {
+      toast("Auto-sync ativado — sincroniza a cada 30 min", "success");
+      autoSyncRef.current = setInterval(() => { syncTodos(); }, 30 * 60 * 1000);
+    } else {
+      if (autoSyncRef.current) { clearInterval(autoSyncRef.current); autoSyncRef.current = null; }
+      if (!autoSync && mlToken) {} // silencioso ao desativar
+    }
+    return () => { if (autoSyncRef.current) clearInterval(autoSyncRef.current); };
+  }, [autoSync, mlToken]);
+
   // Exportar
   function exportExcel() {
     if (!jogos.length) { toast("Nenhum dado para exportar", "warning"); return; }
@@ -537,7 +598,23 @@ export default function App() {
         {/* HEADER */}
         <div style={{ height: 54, background: "#0a0a0a", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", padding: "0 18px", gap: 10, flexShrink: 0 }}>
           <span style={{ fontWeight: 700, fontSize: 13, color: "#fff", flex: 1 }}>🎮 GameTracker ML</span>
-          {lastSync && <span style={{ fontSize: 11, color: "#444" }}>Sync: {lastSync}</span>}
+          {lastSync && <span style={{ fontSize: 11, color: "#444" }}>Último sync: {lastSync}</span>}
+
+          {/* Botão Sync Todos */}
+          {mlToken && (
+            <button onClick={syncTodos} disabled={syncing} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: syncing ? "#111" : "#3b82f620", border: "1px solid #3b82f6", borderRadius: 7, color: syncing ? "#555" : "#3b82f6", fontSize: 11, fontWeight: 700, cursor: syncing ? "not-allowed" : "pointer" }}>
+              <RefreshCw size={12} style={syncing ? { animation: "spin 1s linear infinite" } : {}} />
+              {syncing && syncProgress ? `Sync ${syncProgress.atual}/${syncProgress.total}` : "Sync Todos"}
+            </button>
+          )}
+
+          {/* Toggle Auto-sync */}
+          {mlToken && (
+            <button onClick={() => setAutoSync(s => !s)} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: autoSync ? "#22c55e20" : "#111", border: `1px solid ${autoSync ? "#22c55e" : "#333"}`, borderRadius: 7, color: autoSync ? "#22c55e" : "#555", fontSize: 11, fontWeight: 700 }}>
+              <Zap size={12} />
+              {autoSync ? "Auto ON" : "Auto OFF"}
+            </button>
+          )}
           {mlToken ? (
             <button onClick={() => { localStorage.removeItem("ml_token"); setMlToken(""); toast("ML desconectado", "warning"); }} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: "#f9731615", border: "1px solid #f97316", borderRadius: 7, color: "#f97316", fontSize: 11, fontWeight: 700 }}>
               <Link2 size={12} /> Desconectar ML
