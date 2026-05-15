@@ -43,6 +43,23 @@ const sb = (() => {
       const ct = r.headers.get("Content-Range") || "0/0";
       return parseInt(ct.split("/")[1] || "0");
     },
+    // ML Config — token compartilhado
+    async getMLConfig() {
+      try {
+        const r = await fetch(`${base}/ml_config?id=eq.singleton`, { headers: h });
+        if (!r.ok) return null;
+        const d = await r.json();
+        return d[0] || null;
+      } catch { return null; }
+    },
+    async saveMLConfig(body) {
+      const r = await fetch(`${base}/ml_config?id=eq.singleton`, {
+        method: "PATCH", headers: { ...h, Prefer: "return=representation" },
+        body: JSON.stringify({ ...body, updated_at: new Date().toISOString() }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
     // Busca TODOS os registros sem limite (paginação automática de 1000 em 1000)
     async selectAll(table, params = "") {
       const PAGE = 1000;
@@ -300,9 +317,11 @@ export default function App() {
   const [saving, setSaving]             = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
 
-  const [mlToken, setMlToken]   = useState(() => localStorage.getItem("ml_token") || "");
+  const [mlToken, setMlToken]   = useState("");
+  const [mlAdmin, setMlAdmin]   = useState(false); // true = é o admin que está conectando
   const [syncing, setSyncing]   = useState(false);
   const [lastSync, setLastSync] = useState(() => localStorage.getItem("ml_last_sync") || "");
+  const refreshTimerRef = useRef(null);
 
   const [importPreview, setImportPreview] = useState(null);
   const [importData, setImportData]       = useState([]);
@@ -315,7 +334,58 @@ export default function App() {
   const autoSyncRef = useRef(null);
   const fileRef = useRef();
 
-  // OAuth ML
+  // ── Carregar token ML do Supabase (compartilhado) ──────────────────────────
+  useEffect(() => {
+    loadMLToken();
+    // Verificar renovação a cada 10 minutos
+    refreshTimerRef.current = setInterval(refreshMLTokenSeNecessario, 10 * 60 * 1000);
+    return () => clearInterval(refreshTimerRef.current);
+  }, []);
+
+  async function loadMLToken() {
+    try {
+      const config = await sb.getMLConfig();
+      if (config?.access_token) {
+        setMlToken(config.access_token);
+        // Renovar imediatamente se expirar em menos de 1 hora
+        if (config.expires_at) {
+          const expira = new Date(config.expires_at);
+          const diff   = expira - new Date();
+          if (diff < 60 * 60 * 1000) await refreshMLToken(config.refresh_token);
+        }
+      }
+    } catch(e) { console.error("Erro ao carregar token ML:", e); }
+  }
+
+  async function refreshMLToken(refreshToken) {
+    if (!refreshToken) return;
+    try {
+      const r = await fetch("https://api.mercadolibre.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: new URLSearchParams({ grant_type: "refresh_token", client_id: ML_APP_ID, client_secret: "", refresh_token: refreshToken }),
+      });
+      const data = await r.json();
+      if (data.access_token) {
+        const expiresAt = new Date(Date.now() + (data.expires_in || 21600) * 1000).toISOString();
+        await sb.saveMLConfig({ access_token: data.access_token, refresh_token: data.refresh_token || refreshToken, expires_at: expiresAt });
+        setMlToken(data.access_token);
+      }
+    } catch(e) { console.error("Erro ao renovar token ML:", e); }
+  }
+
+  async function refreshMLTokenSeNecessario() {
+    try {
+      const config = await sb.getMLConfig();
+      if (!config?.access_token || !config?.refresh_token) return;
+      if (config.expires_at) {
+        const diff = new Date(config.expires_at) - new Date();
+        if (diff < 60 * 60 * 1000) await refreshMLToken(config.refresh_token); // renova se < 1h
+      }
+    } catch(e) { console.error("Erro refresh automático:", e); }
+  }
+
+  // ── OAuth callback (usado pelo admin para conectar pela 1ª vez) ─────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
@@ -333,8 +403,16 @@ export default function App() {
         body: new URLSearchParams({ grant_type: "authorization_code", client_id: ML_APP_ID, code, redirect_uri: ML_REDIRECT_URI }),
       });
       const data = await r.json();
-      if (data.access_token) { localStorage.setItem("ml_token", data.access_token); setMlToken(data.access_token); toast("Mercado Livre conectado!"); }
-      else toast("Erro OAuth ML", "error");
+      if (data.access_token) {
+        const expiresAt = new Date(Date.now() + (data.expires_in || 21600) * 1000).toISOString();
+        await sb.saveMLConfig({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_at: expiresAt,
+        });
+        setMlToken(data.access_token);
+        toast("✅ Mercado Livre conectado! Token salvo para todos os usuários.");
+      } else toast("Erro OAuth ML: " + JSON.stringify(data), "error");
     } catch (e) { toast("Erro OAuth: " + e.message, "error"); }
   }
 
@@ -616,7 +694,11 @@ export default function App() {
             </button>
           )}
           {mlToken ? (
-            <button onClick={() => { localStorage.removeItem("ml_token"); setMlToken(""); toast("ML desconectado", "warning"); }} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: "#f9731615", border: "1px solid #f97316", borderRadius: 7, color: "#f97316", fontSize: 11, fontWeight: 700 }}>
+            <button onClick={async () => {
+              await sb.saveMLConfig({ access_token: null, refresh_token: null, expires_at: null });
+              setMlToken("");
+              toast("ML desconectado para todos os usuários", "warning");
+            }} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: "#f9731615", border: "1px solid #f97316", borderRadius: 7, color: "#f97316", fontSize: 11, fontWeight: 700 }}>
               <Link2 size={12} /> Desconectar ML
             </button>
           ) : (
