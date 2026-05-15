@@ -5,27 +5,24 @@ export default async function handler(req, res) {
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // Extrai o path diretamente da URL raw para evitar problemas de double-encoding
-  const rawUrl = req.url || "";
-  const pathParam = rawUrl.split("path=")[1];
-  if (!pathParam) return res.status(400).json({ error: "path obrigatório" });
+  // Pega o path e tenta decodificar de todas as formas possíveis
+  let mlPath = req.query.path || "";
 
-  // Decodifica o path (pode estar encoded uma ou duas vezes)
-  let mlPath;
-  try { mlPath = decodeURIComponent(pathParam); } catch { mlPath = pathParam; }
-  // Segunda decodificação se ainda tiver %
-  if (mlPath.includes("%")) {
-    try { mlPath = decodeURIComponent(mlPath); } catch {}
+  // Tenta decodificar até não ter mais % encoded
+  for (let i = 0; i < 3; i++) {
+    if (!mlPath.includes("%")) break;
+    try { mlPath = decodeURIComponent(mlPath); } catch { break; }
   }
 
-  // Segurança: só permite paths do ML
-  const allowed = ["/items/", "/clips", "/oauth/token"];
-  if (!allowed.some(p => mlPath.includes(p))) {
-    return res.status(403).json({ error: "Path não permitido: " + mlPath });
-  }
+  // Garante que começa com /
+  if (!mlPath.startsWith("/")) mlPath = "/" + mlPath;
 
-  const mlUrl  = `https://api.mercadolibre.com${mlPath}`;
-  const token  = req.headers["authorization"] || "";
+  // Log para debug (aparece nos logs da Vercel)
+  console.log("mlPath final:", mlPath);
+
+  // Sem restrição de path por enquanto — aceita qualquer path do ML
+  const mlUrl = `https://api.mercadolibre.com${mlPath}`;
+  const token = req.headers["authorization"] || "";
   const method = req.method;
   const headers = {};
   if (token) headers["Authorization"] = token;
@@ -45,7 +42,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const mlRes  = await fetch(mlUrl, { method, headers, body });
+    const mlRes = await fetch(mlUrl, { method, headers, body });
     const mlData = await mlRes.json();
     return res.status(mlRes.status).json(mlData);
   } catch (err) {
