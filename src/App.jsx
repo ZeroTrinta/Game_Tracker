@@ -16,7 +16,7 @@ const ML_CLIENT_SECRET  = "JMtnr4ETzZzjQKbvlgSoQVwBVTP7cgmG";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
 // ─── PROXY ML (Supabase Edge Function — resolve CORS) ────────────────────────
-const ML_PROXY = "https://game-tracker-zerotrinta.vercel.app/api/ml-proxy";
+const ML_PROXY = "https://game-tracker-lemon.vercel.app/api/ml-proxy";
 
 async function mlFetch(path, token, options = {}) {
   const url = `${ML_PROXY}?path=${encodeURIComponent(path)}`;
