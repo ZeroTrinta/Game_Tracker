@@ -15,6 +15,36 @@ const ML_APP_ID         = "5901424971936114";
 const ML_CLIENT_SECRET  = "JMtnr4ETzZzjQKbvlgSoQVwBVTP7cgmG";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
+// ─── PROXY ML (Supabase Edge Function — resolve CORS) ────────────────────────
+const ML_PROXY = "https://baftwizxkazuwdczqhpm.supabase.co/functions/v1/ml-proxy";
+
+async function mlFetch(path, token, options = {}) {
+  const url = `${ML_PROXY}?path=${encodeURIComponent(path)}`;
+  const res  = await fetch(url, {
+    method: options.method || "GET",
+    headers: {
+      "Content-Type": options.contentType || "application/json",
+      "Authorization": `Bearer ${token}`,
+      "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZnR3aXp4a2F6dXdkY3pxaHBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjU1ODYsImV4cCI6MjA5NDM0MTU4Nn0.bSVcyhVh_0es0TENfkZJHuR-1KufbijmN8iif39On04",
+    },
+    body: options.body,
+  });
+  return res.json();
+}
+
+async function mlFetchOAuth(body) {
+  const url = `${ML_PROXY}?path=${encodeURIComponent("/oauth/token")}`;
+  const res  = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZnR3aXp4a2F6dXdkY3pxaHBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjU1ODYsImV4cCI6MjA5NDM0MTU4Nn0.bSVcyhVh_0es0TENfkZJHuR-1KufbijmN8iif39On04",
+    },
+    body: new URLSearchParams(body).toString(),
+  });
+  return res.json();
+}
+
 // ─── SUPABASE CLIENT ─────────────────────────────────────────────────────────
 const sb = (() => {
   const h = {
@@ -361,12 +391,7 @@ export default function App() {
   async function refreshMLToken(refreshToken) {
     if (!refreshToken) return;
     try {
-      const r = await fetch("https://api.mercadolibre.com/oauth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: new URLSearchParams({ grant_type: "refresh_token", client_id: ML_APP_ID, client_secret: ML_CLIENT_SECRET, refresh_token: refreshToken }),
-      });
-      const data = await r.json();
+      const data = await mlFetchOAuth({ grant_type: "refresh_token", client_id: ML_APP_ID, client_secret: ML_CLIENT_SECRET, refresh_token: refreshToken });
       if (data.access_token) {
         const expiresAt = new Date(Date.now() + (data.expires_in || 21600) * 1000).toISOString();
         await sb.saveMLConfig({ access_token: data.access_token, refresh_token: data.refresh_token || refreshToken, expires_at: expiresAt });
@@ -398,12 +423,7 @@ export default function App() {
 
   async function exchangeMLCode(code) {
     try {
-      const r = await fetch("https://api.mercadolibre.com/oauth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: new URLSearchParams({ grant_type: "authorization_code", client_id: ML_APP_ID, client_secret: ML_CLIENT_SECRET, code, redirect_uri: ML_REDIRECT_URI }),
-      });
-      const data = await r.json();
+      const data = await mlFetchOAuth({ grant_type: "authorization_code", client_id: ML_APP_ID, client_secret: ML_CLIENT_SECRET, code, redirect_uri: ML_REDIRECT_URI });
       if (data.access_token) {
         const expiresAt = new Date(Date.now() + (data.expires_in || 21600) * 1000).toISOString();
         await sb.saveMLConfig({
@@ -541,10 +561,7 @@ export default function App() {
   async function buscarMotivoNegacao(mlId) {
     try {
       // Endpoint de clips do item
-      const r = await fetch(`https://api.mercadolibre.com/items/${mlId}/clips`, {
-        headers: { Authorization: `Bearer ${mlToken}` }
-      });
-      const data = await r.json();
+      const data = await mlFetch(`/items/${mlId}/clips`, mlToken);
       if (data && data.results && data.results.length > 0) {
         const clip = data.results[0];
         // Status do clip: approved, rejected, under_review, paused
@@ -564,8 +581,7 @@ export default function App() {
     if (!jogo.ml_id) { toast("Cole a URL do anúncio ML primeiro", "warning"); return; }
     setSyncing(true);
     try {
-      const r    = await fetch(`https://api.mercadolibre.com/items/${jogo.ml_id}`, { headers: { Authorization: `Bearer ${mlToken}` } });
-      const data = await r.json();
+      const data = await mlFetch(`/items/${jogo.ml_id}`, mlToken);
       if (data.error) throw new Error(data.message);
       const ns = ML_STATUS_MAP[data.status] || "pendente";
 
@@ -605,10 +621,7 @@ export default function App() {
         const lote = todos.slice(i, i + LOTE);
         await Promise.all(lote.map(async jogo => {
           try {
-            const r = await fetch(`https://api.mercadolibre.com/items/${jogo.ml_id}`, {
-              headers: { Authorization: `Bearer ${mlToken}` }
-            });
-            const data = await r.json();
+            const data = await mlFetch(`/items/${jogo.ml_id}`, mlToken);
             if (data.error) { erros++; return; }
             const ns = ML_STATUS_MAP[data.status] || "pendente";
             const mudou = ns !== jogo.status;
@@ -617,8 +630,7 @@ export default function App() {
             let motivo = jogo.motivo_negacao || "";
             if (ns === "negado") {
               try {
-                const rc = await fetch(`https://api.mercadolibre.com/items/${jogo.ml_id}/clips`, { headers: { Authorization: `Bearer ${mlToken}` } });
-                const dc = await rc.json();
+                const dc = await mlFetch(`/items/${jogo.ml_id}/clips`, mlToken);
                 if (dc?.results?.[0]?.rejection_reasons?.length) {
                   motivo = dc.results[0].rejection_reasons.map(r => r.message || r.reason || "").join("; ");
                 }
