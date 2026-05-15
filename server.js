@@ -23,6 +23,18 @@ createServer(async (req, res) => {
   const oauth    = parsed.query.oauth;
   const token    = req.headers["authorization"] || "";
 
+  // Endpoint de debug — mostra o que está chegando
+  if (parsed.pathname === "/debug") {
+    res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      token_presente: !!token,
+      token_preview: token ? token.substring(0, 30) + "..." : "VAZIO",
+      mlbid, endpoint, oauth,
+      headers: req.headers,
+    }));
+    return;
+  }
+
   let mlUrl, method = req.method, headers = {}, bodyData = "";
 
   await new Promise(resolve => {
@@ -46,6 +58,8 @@ createServer(async (req, res) => {
     return;
   }
 
+  console.log(`[ML] ${method} ${mlUrl} | token: ${token ? "SIM" : "NÃO"}`);
+
   const mlParsed = parse(mlUrl);
   const options  = { hostname: mlParsed.hostname, path: mlParsed.path, method, headers };
   if (bodyData) options.headers["Content-Length"] = Buffer.byteLength(bodyData);
@@ -54,6 +68,7 @@ createServer(async (req, res) => {
     let data = "";
     mlRes.on("data", chunk => data += chunk);
     mlRes.on("end", () => {
+      console.log(`[ML] status: ${mlRes.statusCode}`);
       res.writeHead(mlRes.statusCode, { ...CORS, "Content-Type": "application/json" });
       res.end(data);
     });
