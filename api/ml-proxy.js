@@ -1,40 +1,58 @@
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
+// ml-proxy — Supabase Edge Function
+// Aceita: ?mlbid=MLB123 ou ?mlbid=MLB123&endpoint=clips ou ?oauth=1 (POST)
 
-  if (req.method === "OPTIONS") return res.status(200).end();
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+};
 
-  const { mlbid, endpoint } = req.query;
-  
-  let mlUrl;
-  if (req.method === "POST") {
-    mlUrl = "https://api.mercadolibre.com/oauth/token";
-  } else if (mlbid && endpoint === "clips") {
-    mlUrl = `https://api.mercadolibre.com/items/${mlbid}/clips`;
-  } else if (mlbid) {
-    mlUrl = `https://api.mercadolibre.com/items/${mlbid}`;
-  } else {
-    return res.status(400).json({ error: "mlbid obrigatório" });
-  }
-
-  const token = req.headers["authorization"] || "";
-  const headers = {};
-  if (token) headers["Authorization"] = token;
-
-  let body = undefined;
-  if (req.method === "POST") {
-    headers["Content-Type"] = "application/x-www-form-urlencoded";
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(req.body || {})) params.append(k, v);
-    body = params.toString();
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: cors });
   }
 
   try {
-    const mlRes = await fetch(mlUrl, { method: req.method, headers, body });
-    const mlData = await mlRes.json();
-    return res.status(mlRes.status).json(mlData);
+    const url      = new URL(req.url);
+    const mlbid    = url.searchParams.get("mlbid");
+    const endpoint = url.searchParams.get("endpoint");
+    const oauth    = url.searchParams.get("oauth");
+    const token    = req.headers.get("Authorization") || req.headers.get("authorization") || "";
+
+    let mlUrl: string;
+    let method = req.method;
+    let headers: Record<string, string> = {};
+    let body: string | undefined;
+
+    if (oauth === "1" || method === "POST") {
+      // OAuth token exchange/refresh
+      mlUrl = "https://api.mercadolibre.com/oauth/token";
+      method = "POST";
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+      body = await req.text();
+    } else if (mlbid && endpoint === "clips") {
+      mlUrl = `https://api.mercadolibre.com/items/${mlbid}/clips`;
+      if (token) headers["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    } else if (mlbid) {
+      mlUrl = `https://api.mercadolibre.com/items/${mlbid}`;
+      if (token) headers["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    } else {
+      return new Response(JSON.stringify({ error: "Parâmetros inválidos" }), {
+        status: 400, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+
+    const mlRes  = await fetch(mlUrl, { method, headers, body });
+    const mlText = await mlRes.text();
+
+    return new Response(mlText, {
+      status: mlRes.status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
+      status: 500, headers: { ...cors, "Content-Type": "application/json" },
+    });
   }
-}
+});
