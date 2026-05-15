@@ -742,11 +742,15 @@ export default function App() {
           )}
           {mlToken ? (
             <button onClick={async () => {
+              const conf1 = window.confirm("⚠️ Desconectar o ML vai afetar TODOS os usuários do app. Tem certeza?");
+              if (!conf1) return;
+              const conf2 = window.confirm("🔴 Confirmação final: isso vai desconectar o Mercado Livre para todo mundo. Continuar?");
+              if (!conf2) return;
               await sb.saveMLConfig({ access_token: null, refresh_token: null, expires_at: null });
               setMlToken("");
               toast("ML desconectado para todos os usuários", "warning");
-            }} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: "#f9731615", border: "1px solid #f97316", borderRadius: 7, color: "#f97316", fontSize: 11, fontWeight: 700 }}>
-              <Link2 size={12} /> Desconectar ML
+            }} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: "#111", border: "1px solid #333", borderRadius: 7, color: "#555", fontSize: 11, fontWeight: 700 }}>
+              <Link2 size={12} /> ML
             </button>
           ) : (
             <button onClick={() => { window.location.href = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`; }} className="btn" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", background: "linear-gradient(135deg,#f97316,#fb923c)", border: "none", borderRadius: 7, color: "#000", fontSize: 11, fontWeight: 800 }}>
