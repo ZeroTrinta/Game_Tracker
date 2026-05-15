@@ -16,7 +16,7 @@ const ML_CLIENT_SECRET  = "JMtnr4ETzZzjQKbvlgSoQVwBVTP7cgmG";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
 // ─── PROXY ML (Supabase Edge Function — resolve CORS) ────────────────────────
-const ML_PROXY = "https://baftwizxkazuwdczqhpm.supabase.co/functions/v1/ml-proxy";
+const ML_PROXY = "https://patient-cherry-3988.enzotamietto.workers.dev";
 
 async function mlFetch(mlbid, token, endpoint = "") {
   const url = endpoint
