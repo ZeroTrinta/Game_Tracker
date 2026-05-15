@@ -26,7 +26,6 @@ async function mlFetch(mlbid, token, endpoint = "") {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`,
-      "apikey": SUPABASE_ANON_KEY,
     },
   });
   return res.json();
