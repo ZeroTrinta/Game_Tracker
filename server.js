@@ -1,6 +1,6 @@
-const http = require("http");
-const https = require("https");
-const url = require("url");
+import { createServer } from "http";
+import { request as httpsRequest } from "https";
+import { parse } from "url";
 
 const PORT = process.env.PORT || 3000;
 
@@ -10,14 +10,14 @@ const CORS = {
   "Access-Control-Allow-Headers": "*",
 };
 
-const server = http.createServer(async (req, res) => {
+createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS);
     res.end();
     return;
   }
 
-  const parsed   = url.parse(req.url, true);
+  const parsed   = parse(req.url, true);
   const mlbid    = parsed.query.mlbid;
   const endpoint = parsed.query.endpoint;
   const oauth    = parsed.query.oauth;
@@ -46,11 +46,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const mlParsed = url.parse(mlUrl);
+  const mlParsed = parse(mlUrl);
   const options  = { hostname: mlParsed.hostname, path: mlParsed.path, method, headers };
   if (bodyData) options.headers["Content-Length"] = Buffer.byteLength(bodyData);
 
-  const mlReq = https.request(options, mlRes => {
+  const mlReq = httpsRequest(options, mlRes => {
     let data = "";
     mlRes.on("data", chunk => data += chunk);
     mlRes.on("end", () => {
@@ -66,6 +66,5 @@ const server = http.createServer(async (req, res) => {
 
   if (bodyData) mlReq.write(bodyData);
   mlReq.end();
-});
 
-server.listen(PORT, () => console.log(`ML Proxy rodando na porta ${PORT}`));
+}).listen(PORT, () => console.log(`ML Proxy rodando na porta ${PORT}`));
