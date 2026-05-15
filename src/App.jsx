@@ -12,6 +12,7 @@ import {
 const SUPABASE_URL      = "https://baftwizxkazuwdczqhpm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZnR3aXp4a2F6dXdkY3pxaHBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjU1ODYsImV4cCI6MjA5NDM0MTU4Nn0.bSVcyhVh_0es0TENfkZJHuR-1KufbijmN8iif39On04";
 const ML_APP_ID         = "5901424971936114";
+const ML_CLIENT_SECRET  = "JMtnr4ETzZzjQKbvlgSoQVwBVTP7cgmG";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
 // ─── SUPABASE CLIENT ─────────────────────────────────────────────────────────
@@ -363,7 +364,7 @@ export default function App() {
       const r = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: new URLSearchParams({ grant_type: "refresh_token", client_id: ML_APP_ID, client_secret: "", refresh_token: refreshToken }),
+        body: new URLSearchParams({ grant_type: "refresh_token", client_id: ML_APP_ID, client_secret: ML_CLIENT_SECRET, refresh_token: refreshToken }),
       });
       const data = await r.json();
       if (data.access_token) {
@@ -400,7 +401,7 @@ export default function App() {
       const r = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: new URLSearchParams({ grant_type: "authorization_code", client_id: ML_APP_ID, code, redirect_uri: ML_REDIRECT_URI }),
+        body: new URLSearchParams({ grant_type: "authorization_code", client_id: ML_APP_ID, client_secret: ML_CLIENT_SECRET, code, redirect_uri: ML_REDIRECT_URI }),
       });
       const data = await r.json();
       if (data.access_token) {
@@ -536,6 +537,28 @@ export default function App() {
   }
 
   // Sync ML
+  // Busca motivo de negação/recusa do clip no ML
+  async function buscarMotivoNegacao(mlId) {
+    try {
+      // Endpoint de clips do item
+      const r = await fetch(`https://api.mercadolibre.com/items/${mlId}/clips`, {
+        headers: { Authorization: `Bearer ${mlToken}` }
+      });
+      const data = await r.json();
+      if (data && data.results && data.results.length > 0) {
+        const clip = data.results[0];
+        // Status do clip: approved, rejected, under_review, paused
+        if (clip.status === "rejected" && clip.rejection_reasons) {
+          return clip.rejection_reasons.map(r => r.message || r.reason || JSON.stringify(r)).join("; ");
+        }
+        if (clip.rejection_reasons?.length) {
+          return clip.rejection_reasons.map(r => r.message || r.reason || JSON.stringify(r)).join("; ");
+        }
+      }
+    } catch(e) { console.error("Erro ao buscar motivo:", e); }
+    return "";
+  }
+
   async function syncML(jogo) {
     if (!mlToken) { toast("Conecte o ML primeiro", "warning"); return; }
     if (!jogo.ml_id) { toast("Cole a URL do anúncio ML primeiro", "warning"); return; }
@@ -545,9 +568,18 @@ export default function App() {
       const data = await r.json();
       if (data.error) throw new Error(data.message);
       const ns = ML_STATUS_MAP[data.status] || "pendente";
-      await sb.update("jogos", jogo.id, { status: ns, atualizado_em: new Date().toISOString() });
-      setSelected(s => s ? { ...s, status: ns } : s);
-      toast(`Status ML: ${STATUS[ns]?.label}`);
+
+      // Se negado, busca o motivo automaticamente
+      let motivo = jogo.motivo_negacao || "";
+      if (ns === "negado") {
+        const motivoML = await buscarMotivoNegacao(jogo.ml_id);
+        if (motivoML) motivo = motivoML;
+      }
+
+      const updates = { status: ns, motivo_negacao: motivo, atualizado_em: new Date().toISOString() };
+      await sb.update("jogos", jogo.id, updates);
+      setSelected(s => s ? { ...s, status: ns, motivo_negacao: motivo } : s);
+      toast(`Status ML: ${STATUS[ns]?.label}${motivo ? " — motivo salvo" : ""}`);
       loadJogos();
     } catch (e) { toast("Erro sync ML: " + e.message, "error"); }
     setSyncing(false);
@@ -579,9 +611,24 @@ export default function App() {
             const data = await r.json();
             if (data.error) { erros++; return; }
             const ns = ML_STATUS_MAP[data.status] || "pendente";
-            if (ns !== jogo.status) {
-              await sb.update("jogos", jogo.id, { status: ns, atualizado_em: new Date().toISOString() });
-              ok++;
+            const mudou = ns !== jogo.status;
+
+            // Se negado, busca motivo automaticamente
+            let motivo = jogo.motivo_negacao || "";
+            if (ns === "negado") {
+              try {
+                const rc = await fetch(`https://api.mercadolibre.com/items/${jogo.ml_id}/clips`, { headers: { Authorization: `Bearer ${mlToken}` } });
+                const dc = await rc.json();
+                if (dc?.results?.[0]?.rejection_reasons?.length) {
+                  motivo = dc.results[0].rejection_reasons.map(r => r.message || r.reason || "").join("; ");
+                }
+              } catch {}
+            }
+
+            if (mudou || (ns === "negado" && motivo)) {
+              await sb.update("jogos", jogo.id, { status: ns, motivo_negacao: motivo, atualizado_em: new Date().toISOString() });
+              if (mudou) ok++;
+              else sem_mudanca++;
             } else sem_mudanca++;
           } catch { erros++; }
         }));
