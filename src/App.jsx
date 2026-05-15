@@ -16,16 +16,15 @@ const ML_CLIENT_SECRET  = "JMtnr4ETzZzjQKbvlgSoQVwBVTP7cgmG";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
 // ─── PROXY ML (Supabase Edge Function — resolve CORS) ────────────────────────
-const ML_PROXY = "https://baftwizxkazuwdczqhpm.supabase.co/functions/v1/ml-proxy";
+const ML_PROXY = "https://game-tracker-zerotrinta.vercel.app/api/ml-proxy";
 
 async function mlFetch(path, token, options = {}) {
   const url = `${ML_PROXY}?path=${encodeURIComponent(path)}`;
   const res  = await fetch(url, {
     method: options.method || "GET",
     headers: {
-      "Content-Type": options.contentType || "application/json",
+      "Content-Type": "application/json",
       "Authorization": `Bearer ${token}`,
-      "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZnR3aXp4a2F6dXdkY3pxaHBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjU1ODYsImV4cCI6MjA5NDM0MTU4Nn0.bSVcyhVh_0es0TENfkZJHuR-1KufbijmN8iif39On04",
     },
     body: options.body,
   });
@@ -36,10 +35,7 @@ async function mlFetchOAuth(body) {
   const url = `${ML_PROXY}?path=${encodeURIComponent("/oauth/token")}`;
   const res  = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZnR3aXp4a2F6dXdkY3pxaHBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjU1ODYsImV4cCI6MjA5NDM0MTU4Nn0.bSVcyhVh_0es0TENfkZJHuR-1KufbijmN8iif39On04",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(body).toString(),
   });
   return res.json();
