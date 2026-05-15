@@ -16,21 +16,29 @@ const ML_CLIENT_SECRET  = "JMtnr4ETzZzjQKbvlgSoQVwBVTP7cgmG";
 const ML_REDIRECT_URI   = window.location.origin + window.location.pathname;
 
 // ─── PROXY ML (Supabase Edge Function — resolve CORS) ────────────────────────
-const ML_PROXY = "https://game-tracker-lemon.vercel.app/api/ml-proxy";
+const ML_PROXY = "https://baftwizxkazuwdczqhpm.supabase.co/functions/v1/ml-proxy";
 
 async function mlFetch(mlbid, token, endpoint = "") {
-  const url = `${ML_PROXY}?mlbid=${mlbid}${endpoint ? "&endpoint=" + endpoint : ""}`;
+  const url = endpoint
+    ? `${ML_PROXY}?mlbid=${mlbid}&endpoint=${endpoint}`
+    : `${ML_PROXY}?mlbid=${mlbid}`;
   const res  = await fetch(url, {
     method: "GET",
-    headers: { "Authorization": `Bearer ${token}` },
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "apikey": SUPABASE_ANON_KEY,
+    },
   });
   return res.json();
 }
 
 async function mlFetchOAuth(body) {
-  const res = await fetch(ML_PROXY, {
+  const res = await fetch(`${ML_PROXY}?oauth=1`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "apikey": SUPABASE_ANON_KEY,
+    },
     body: new URLSearchParams(body).toString(),
   });
   return res.json();
