@@ -605,9 +605,9 @@ export default function App() {
           const prod = await mlFetch(prodId, mlToken, "items");
           console.log("[PROD]", JSON.stringify(prod).substring(0, 200));
           if (prod.results && prod.results.length > 0) {
-            // results pode ser array de strings (IDs) ou objetos
             const first = prod.results[0];
-            mlbid = typeof first === "string" ? first : (first.id || first);
+            // results pode ser string, objeto com item_id, ou objeto com id
+            mlbid = typeof first === "string" ? first : (first.item_id || first.id || first);
           } else if (prod.ids && prod.ids.length > 0) {
             mlbid = prod.ids[0];
           }
