@@ -49,6 +49,10 @@ createServer(async (req, res) => {
   } else if (mlbid && endpoint === "clips") {
     mlUrl = `https://api.mercadolibre.com/items/${mlbid}/clips`;
     if (token) headers["Authorization"] = token;
+  } else if (mlbid && endpoint === "items") {
+    // Busca itens de um produto agrupado (/p/MLB...)
+    mlUrl = `https://api.mercadolibre.com/products/${mlbid}/items`;
+    if (token) headers["Authorization"] = token;
   } else if (mlbid) {
     mlUrl = `https://api.mercadolibre.com/items/${mlbid}`;
     if (token) headers["Authorization"] = token;
