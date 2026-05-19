@@ -51,7 +51,11 @@ createServer(async (req, res) => {
     if (token) headers["Authorization"] = token;
   } else if (mlbid && endpoint === "items") {
     // Busca itens de um produto agrupado (/p/MLB...)
-    mlUrl = `https://api.mercadolibre.com/products/${mlbid}/items`;
+    mlUrl = `https://api.mercadolibre.com/products/${mlbid}/items?limit=1`;
+    if (token) headers["Authorization"] = token;
+  } else if (mlbid && endpoint === "search") {
+    // Busca anúncios pelo seller usando product_id
+    mlUrl = `https://api.mercadolibre.com/users/me/items/search?product_id=${mlbid}`;
     if (token) headers["Authorization"] = token;
   } else if (mlbid) {
     mlUrl = `https://api.mercadolibre.com/items/${mlbid}`;
