@@ -22,17 +22,28 @@ async function mlFetch(mlbid, token, endpoint = "") {
   const url = endpoint
     ? `${ML_PROXY}?mlbid=${mlbid}&endpoint=${endpoint}`
     : `${ML_PROXY}?mlbid=${mlbid}`;
-  console.log("[DEBUG] mlFetch token:", token ? token.substring(0,20)+"..." : "VAZIO");
-  console.log("[DEBUG] mlFetch url:", url);
   const res  = await fetch(url, {
     method: "GET",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-    },
+    headers: { "Authorization": `Bearer ${token}` },
   });
-  const data = await res.json();
-  console.log("[DEBUG] mlFetch response:", JSON.stringify(data).substring(0,100));
-  return data;
+  return res.json();
+}
+
+// Extrai MLB ID do anúncio a partir de uma URL ou ID de produto
+async function resolverMLBId(urlOuId, token) {
+  // Se for URL de produto (/p/MLB...), busca os itens do produto
+  const prodMatch = urlOuId.match(/\/p\/(MLB\d+)/i);
+  if (prodMatch) {
+    const prodId = prodMatch[1];
+    const data = await mlFetch(prodId, token, "items");
+    if (data.results && data.results.length > 0) {
+      return data.results[0]; // Retorna o primeiro item do produto
+    }
+    return null;
+  }
+  // Se for ID direto (MLB...)
+  const idMatch = urlOuId.match(/MLB\d+/i);
+  return idMatch ? idMatch[0] : urlOuId;
 }
 
 async function mlFetchOAuth(body) {
@@ -583,7 +594,19 @@ export default function App() {
     if (!jogo.ml_id) { toast("Cole a URL do anúncio ML primeiro", "warning"); return; }
     setSyncing(true);
     try {
-      const data = await mlFetch(jogo.ml_id, mlToken);
+      // Resolve ID de produto para ID de anúncio se necessário
+      let mlbid = jogo.ml_id;
+      const urlAnuncio = jogo.url_anuncio_ml || "";
+      if (urlAnuncio.includes("/p/")) {
+        const prodMatch = urlAnuncio.match(/\/p\/(MLB\d+)/i);
+        if (prodMatch) {
+          const prod = await mlFetch(prodMatch[1], mlToken, "items");
+          if (prod.results && prod.results.length > 0) {
+            mlbid = prod.results[0].id || prod.results[0];
+          }
+        }
+      }
+      const data = await mlFetch(mlbid, mlToken);
       if (data.error) throw new Error(data.message);
       const ns = ML_STATUS_MAP[data.status] || "pendente";
 
