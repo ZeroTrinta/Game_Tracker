@@ -600,9 +600,17 @@ export default function App() {
       if (urlAnuncio.includes("/p/")) {
         const prodMatch = urlAnuncio.match(/\/p\/(MLB\d+)/i);
         if (prodMatch) {
-          const prod = await mlFetch(prodMatch[1], mlToken, "items");
-          if (prod.results && prod.results.length > 0) {
-            mlbid = prod.results[0].id || prod.results[0];
+          const prodId = prodMatch[1];
+          // Tenta buscar itens via product_id do vendedor logado
+          const search = await mlFetch(prodId, mlToken, "search");
+          if (search.results && search.results.length > 0) {
+            mlbid = search.results[0];
+          } else {
+            // Fallback: busca via products endpoint
+            const prod = await mlFetch(prodId, mlToken, "items");
+            if (prod.results && prod.results.length > 0) {
+              mlbid = prod.results[0].id || prod.results[0];
+            }
           }
         }
       }
