@@ -601,19 +601,19 @@ export default function App() {
         const prodMatch = urlAnuncio.match(/\/p\/(MLB\d+)/i);
         if (prodMatch) {
           const prodId = prodMatch[1];
-          // Tenta buscar itens via product_id do vendedor logado
-          const search = await mlFetch(prodId, mlToken, "search");
-          if (search.results && search.results.length > 0) {
-            mlbid = search.results[0];
-          } else {
-            // Fallback: busca via products endpoint
-            const prod = await mlFetch(prodId, mlToken, "items");
-            if (prod.results && prod.results.length > 0) {
-              mlbid = prod.results[0].id || prod.results[0];
-            }
+          // Busca itens via products endpoint
+          const prod = await mlFetch(prodId, mlToken, "items");
+          console.log("[PROD]", JSON.stringify(prod).substring(0, 200));
+          if (prod.results && prod.results.length > 0) {
+            // results pode ser array de strings (IDs) ou objetos
+            const first = prod.results[0];
+            mlbid = typeof first === "string" ? first : (first.id || first);
+          } else if (prod.ids && prod.ids.length > 0) {
+            mlbid = prod.ids[0];
           }
         }
       }
+      console.log("[SYNC] mlbid resolvido:", mlbid);
       const data = await mlFetch(mlbid, mlToken);
       if (data.error) throw new Error(data.message);
       const ns = ML_STATUS_MAP[data.status] || "pendente";
